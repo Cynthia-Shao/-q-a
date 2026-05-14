@@ -1,0 +1,12 @@
+powershell里
+cd Desktop\-q-a-main\src
+# 安装 Flask 相关依赖
+pip install flask flask-cors ollama
+
+# 确保 Ollama 已在后台运行
+ollama serve
+
+# 运行 Web 应用
+python app.py
+
+浏览器打开http://127.0.0.1:5000
