@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>铁路出行问答助手</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        #chat { border: 1px solid #ccc; height: 400px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; }
+        .user { text-align: right; color: blue; }
+        .bot { text-align: left; color: green; }
+    </style>
+</head>
+<body>
+    <h2>🚆 铁路出行问答助手</h2>
+    <div id="chat"></div>
+    <input type="text" id="question" style="width: 80%;" placeholder="输入你的问题...">
+    <button onclick="sendQuestion()">发送</button>
+
+    <script>
+        async function sendQuestion() {
+            let input = document.getElementById('question');
+            let question = input.value;
+            if (!question) return;
+            
+            // 显示用户消息
+            let chatDiv = document.getElementById('chat');
+            chatDiv.innerHTML += `<div class="user">👤 你: ${question}</div>`;
+            input.value = '';
+            
+            // 发送到后端
+            let response = await fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: question})
+            });
+            let data = await response.json();
+            chatDiv.innerHTML += `<div class="bot">🤖 助手: ${data.reply}</div>`;
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+        }
+    </script>
+</body>
+</html>
