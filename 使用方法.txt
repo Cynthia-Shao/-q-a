@@ -1,19 +1,64 @@
-powershell里
-cd Desktop\-q-a-main\src
-# 安装 Flask 相关依赖
-pip install flask flask-cors ollama
+项目运行方法
 
-# 确保 Ollama 已在后台运行
+1. 启动 Ollama
+
+在终端中运行：
+
 ollama serve
 
-加rag开关 不使用
-$env:USE_RAG="false"; python app.py
+如果已经在后台运行，可以跳过这一步。
 
-# 运行 Web 应用
-python app.py
+2. 安装依赖
 
-浏览器打开http://127.0.0.1:5000
+建议使用 Python 3.10 或 Python 3.11。当前项目需要 faiss，Python 3.13 可能无法直接安装 faiss-cpu。
 
-评估的话
-cd Desktop\-q-a-main
+python -m pip install -r requirements.txt
+
+如果提示找不到 faiss-cpu，通常是 pip 镜像源没有该包。可以改用官方 PyPI：
+
+py -3.10 -m pip install -r requirements.txt -i https://pypi.org/simple
+
+3. 启动 Web 问答页面
+
+进入项目根目录后运行：
+
+python src/app.py
+
+浏览器打开：
+
+http://127.0.0.1:5000
+
+4. 运行 RAG 对比评估
+
+默认使用 75 条最终评估集：
+
 python evaluate_rag.py
+
+脚本会输出三个文件：
+
+evaluation_results.csv
+逐题结果，包括无 RAG 回答、RAG 回答、相似度、关键事实命中率、检索首条结果等。
+
+evaluation_summary.csv
+按题型分组的汇总结果，包括 all、rule_detail、simple、out_of_scope。
+
+evaluation_report.md
+可直接写入课程报告的评估摘要和结论。
+
+5. 快速调试
+
+如果只想先测试前 3 条，运行：
+
+python evaluate_rag.py --limit 3
+
+6. 当前评估改进点
+
+本版本已经固定大模型生成参数：
+
+temperature = 0
+top_p = 1
+seed = 42
+
+这样可以减少每次运行结果不同的问题。
+
+评估不再只看整体平均相似度，还会按题型分组统计。规则细节题 rule_detail 更适合体现 RAG 在具体条款、时间、比例、证件、费用等问题上的优势。
