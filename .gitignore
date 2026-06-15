@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Evaluation outputs (auto-generated, large)
+eval_full_v3.*
+
+# Environment
+.env
+*.env.local
+
+# Conda / venv
+.conda/
+venv/
+env/

@@ -1,64 +1,44 @@
-项目运行方法
+铁路旅客智能问答系统 — 使用说明
 
 1. 启动 Ollama
 
 在终端中运行：
 
-ollama serve
+    ollama serve
 
 如果已经在后台运行，可以跳过这一步。
 
 2. 安装依赖
 
-建议使用 Python 3.10 或 Python 3.11。当前项目需要 faiss，Python 3.13 可能无法直接安装 faiss-cpu。
+建议使用 Python 3.10 ~ 3.12（Python 3.13 可能无法直接安装 faiss-cpu）。
 
-python -m pip install -r requirements.txt
+    pip install -r requirements.txt
 
-如果提示找不到 faiss-cpu，通常是 pip 镜像源没有该包。可以改用官方 PyPI：
+如果提示找不到 faiss-cpu，通常是 pip 镜像源没有该包，可以改用官方 PyPI：
 
-py -3.10 -m pip install -r requirements.txt -i https://pypi.org/simple
+    pip install -r requirements.txt -i https://pypi.org/simple
 
 3. 启动 Web 问答页面
 
-进入项目根目录后运行：
+    python src/app.py
 
-python src/app.py
+浏览器打开 http://127.0.0.1:5000
 
-浏览器打开：
+4. 运行评估
 
-http://127.0.0.1:5000
+默认使用 75 条评估集，对比三种模式（纯 LLM、向量 RAG、混合 RAG）：
 
-4. 运行 RAG 对比评估
-
-默认使用 75 条最终评估集：
-
-python evaluate_rag.py
+    python evaluate_rag.py
 
 脚本会输出三个文件：
+- evaluation_results.csv — 逐题结果
+- evaluation_summary.csv — 按题型分组的汇总
+- evaluation_report.html — 可视化报告
 
-evaluation_results.csv
-逐题结果，包括无 RAG 回答、RAG 回答、相似度、关键事实命中率、检索首条结果等。
+快速调试（前 3 题）：
 
-evaluation_summary.csv
-按题型分组的汇总结果，包括 all、rule_detail、simple、out_of_scope。
+    python evaluate_rag.py --limit 3
 
-evaluation_report.md
-可直接写入课程报告的评估摘要和结论。
+5. 项目结构
 
-5. 快速调试
-
-如果只想先测试前 3 条，运行：
-
-python evaluate_rag.py --limit 3
-
-6. 当前评估改进点
-
-本版本已经固定大模型生成参数：
-
-temperature = 0
-top_p = 1
-seed = 42
-
-这样可以减少每次运行结果不同的问题。
-
-评估不再只看整体平均相似度，还会按题型分组统计。规则细节题 rule_detail 更适合体现 RAG 在具体条款、时间、比例、证件、费用等问题上的优势。
+核心文件在根目录，Web 服务在 src/ 目录，构建脚本在 scripts/ 目录，评估结果在 eval_results/。

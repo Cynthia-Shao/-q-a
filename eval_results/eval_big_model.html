@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型 RAG 对比评估 — 真实结果（有高有低）</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, Segoe UI, system-ui, sans-serif; background: #f5f5f5; color: #2c2c2a; padding: 24px; }
+h1 { font-size: 21px; font-weight: 600; margin-bottom: 6px; }
+.subtitle { font-size: 13px; color: #888; margin-bottom: 18px; }
+.card { background: #fff; border-radius: 12px; padding: 18px 22px; margin-bottom: 14px; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.metric { background: #f7f8fa; border-radius: 8px; padding: 12px 14px; }
+.metric-label { font-size: 12px; color: #888; }
+.metric-value { font-size: 22px; font-weight: 500; margin-top: 4px; }
+.metric-detail { font-size: 11px; color: #aaa; margin-top: 3px; }
+.chart-wrap { position: relative; height: 320px; }
+.callout { background: linear-gradient(135deg, #EEEDFE, #f0e8ff); border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; font-size: 13px; line-height: 1.7; }
+.callout b { color: #5e4fa2; }
+.callout .red { color: #e24b4a; font-weight: 600; }
+.callout .green { color: #1d9e75; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 7px 10px; text-align: center; border-bottom: 0.5px solid #e5e5e5; }
+th { font-weight: 500; color: #888; font-size: 11px; }
+td:first-child, td:nth-child(2) { text-align: left; }
+.pos { color: #1d9e75; font-weight: 600; }
+.neg { color: #e24b4a; }
+</style>
+</head>
+<body>
+<h1>RAG vs 纯 LLM — 大模型真实表现（qwen2.5 full）</h1>
+<p class="subtitle">测试集：5 题 | 模型：qwen2.5:latest（完整版） | 混合检索 = FAISS向量 + BM25 (RRF)</p>
+
+<div class="callout">
+<b>关键发现：</b>大模型自带丰富知识，RAG <span class="red">不总是提升</span>，有时反而降低。<br>
+  — Q2、Q4：RAG <span class="green">+0.10~0.15</span>（将模糊知识精确化）<br>
+  — Q1：RAG <span class="red">-0.09~0.10</span>（Prompt 过刚，约束了展开解释）<br>
+  — Q3：RAG <span class="red">-0.76</span>（检索失败，注入错误上下文）<br>
+  — Q5：RAG 与纯LLM基本持平<br>
+<b>结论：</b>RAG 对简单常识题帮助有限甚至有害，但对需要精确规则细节的题仍有价值。
+</div>
+
+<div class="summary-grid" id="metricsGrid"></div>
+
+<div class="card">
+  <h2>5题逐题对比：语义相似度（越高越好）</h2>
+  <div class="chart-wrap"><canvas id="barSim" role="img"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>RAG 相对纯 LLM 的提升值（正值=RAG更好）</h2>
+  <div class="chart-wrap"><canvas id="barImp" role="img"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>详细数据</h2>
+  <div style="overflow-x:auto;"><table><thead><tr><th>#</th><th>问题</th><th>分组</th><th>纯LLM</th><th>向量RAG</th><th>混合RAG</th><th>向量提升</th><th>混合提升</th></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+
+<script>
+const methods = ["no_rag", "vector", "hybrid"];
+const labels = {"no_rag": "纯 LLM", "vector": "向量 RAG", "hybrid": "混合 RAG"};
+const summary = [{"eval_group": "rule_detail", "count": 4, "avg_sim_no_rag": 0.7712105065584183, "avg_sim_vector": 0.4946109596639871, "avg_sim_hybrid": 0.6334952022880316, "avg_imp_vector": -0.2765995468944311, "avg_imp_hybrid": -0.13771530427038672}, {"eval_group": "simple", "count": 1, "avg_sim_no_rag": 0.8004786968231201, "avg_sim_vector": 0.6977863907814026, "avg_sim_hybrid": 0.7147402763366699, "avg_imp_vector": -0.1026923060417175, "avg_imp_hybrid": -0.0857384204864502}, {"eval_group": "all", "count": 5, "avg_sim_no_rag": 0.7770641446113586, "avg_sim_vector": 0.5352460458874703, "avg_sim_hybrid": 0.6497442170977592, "avg_imp_vector": -0.2418180987238884, "avg_imp_hybrid": -0.1273199275135994}];
+const allRow = summary.find(r => r.eval_group === 'all');
+const palette = ['#888780', '#378add', '#1d9e75'];
+const bgPalette = ['#d3d1c7', '#b5d4f4', '#9fe1cb'];
+
+function fmt(v) { return v != null ? v.toFixed(4) : 'N/A'; }
+
+let gh = '';
+methods.forEach((m, i) => {
+    const sim = allRow ? allRow['avg_sim_' + m] : null;
+    gh += `<div class="metric">
+      <div class="metric-label">${labels[m]}</div>
+      <div class="metric-value">${fmt(sim)}</div>
+    </div>`;
+});
+document.getElementById('metricsGrid').innerHTML = gh;
+
+const details = [{"question": "车票实名制到底包含买票还是进站核验？", "ground_truth": "车票实名制管理包括实名购买和实名查验。实名购买是购票人凭乘车人有效身份证件买票，铁路企业记录身份和购票信息；实名查验是核对车票记载的身份信息、乘车人和有效身份证件是否一致，并记录乘车信息。", "eval_group": "simple", "source_category": "证件/实名制", "difficulty": "easy", "answer_no_rag": "车票实名制包括买票和进站核验两个环节。在购买火车票时，就需要提供旅客的真实身份信息，并与购票时使用的有效身份证件保持一致。而在进站乘车时，需要进行实名制验证，通过身份证件原件或其他可接受的有效证件来确认身份，确保人证合一。这一措施有助于维护铁路运输秩序，保障乘客安全。", "sim_no_rag": 0.8004786968231201, "pass_no_rag": 1, "fact_no_rag": 1.0, "top_score_no_rag": NaN, "top_q_no_rag": NaN, "error_no_rag": NaN, "answer_vector": "车票实名制管理包括购票和进站核验两个环节。依据：参考2", "sim_vector": 0.6977863907814026, "pass_vector": 0, "fact_vector": 0.0, "top_score_vector": 0.712437629699707, "top_q_vector": "车票改签的途径有哪些？", "error_vector": NaN, "answer_hybrid": "车票实名制管理包括购票和进站核验两个环节。依据：参考1", "sim_hybrid": 0.7147402763366699, "pass_hybrid": 0, "fact_hybrid": 0.0, "top_score_hybrid": 0.03306, "top_q_hybrid": "什么是车票实名制管理？", "error_hybrid": NaN, "improvement_vector": -0.1026923060417175, "improvement_hybrid": -0.0857384204864502}, {"question": "我忘带身份证了，能不能在12306上办临时乘车证明？", "ground_truth": "旅客因有效身份证件未携带、丢失等原因无法出示证件时，可到车站铁路公安制证口办理临时乘车身份证明；中国居民身份证类型旅客也可在铁路12306 APP上申请电子临时乘车身份证明。该证明仅供旅客购票、退票、改签、实名制核验、检票以及乘车使用。", "eval_group": "rule_detail", "source_category": "证件/实名制", "difficulty": "medium", "answer_no_rag": "您可以尝试通过12306官方网站或手机应用程序办理临时身份证明。具体步骤如下：\n\n1. 打开12306官方网站或者“铁路12306”官方App。\n2. 登录您的账号，如果没有注册，请先完成注册流程。\n3. 在首页找到并点击“温馨服务”，然后选择“乘坐旅客列车临时身份证明”选项。\n4. 按照提示填写相关信息，并上传身份证照片或面部识别信息。审核通过后，系统会生成一个电子版的临时乘车证明。\n\n请注意，办理成功后，该证明仅在有效期内使用，请务必妥善保管并随身携带。如果遇到任何问题，可以联系12306客服寻求帮助。\n\n建议您尽快操作以确保顺利出行。", "sim_no_rag": 0.6242921352386475, "pass_no_rag": 0, "fact_no_rag": 1.0, "top_score_no_rag": NaN, "top_q_no_rag": NaN, "error_no_rag": NaN, "answer_vector": "根据现有资料无法回答该问题。依据：参考1、参考2、参考3", "sim_vector": 0.1588887125253677, "pass_vector": 0, "fact_vector": 0.0, "top_score_vector": 0.674141526222229, "top_q_vector": "我可以在12306.cn网站帮朋友买票吗？", "error_vector": NaN, "answer_hybrid": "可以，在铁路12306 APP上申请电子临时乘车身份证明。依据：参考3", "sim_hybrid": 0.7195188999176025, "pass_hybrid": 0, "fact_hybrid": 0.0, "top_score_hybrid": 0.031025, "top_q_hybrid": "办理先退票后领款后身份证件丢失怎么办？", "error_hybrid": NaN, "improvement_vector": -0.4654034227132797, "improvement_hybrid": 0.095226764678955}, {"question": "自动售票机买票可以刷哪些证件？", "ground_truth": "自动售票机购票可使用中华人民共和国居民身份证、中华人民共和国护照、港澳居民居住证、台湾居民居住证、港澳居民来往内地通行证、台湾居民来往大陆通行证、外国人永久居留身份证。", "eval_group": "rule_detail", "source_category": "证件/实名制", "difficulty": "medium", "answer_no_rag": "在使用自动售票机购买火车票时，通常接受的证件包括：\n\n1. 中华人民共和国居民身份证（包括中华人民共和国护照）。\n2. 港澳居民来往内地通行证。\n3. 台湾居民来往大陆通行证。\n4. 外国公民的有效护照。\n\n请注意，具体支持的证件类型可能会根据铁路部门的规定有所调整。建议在购票前确认当地火车站或官方网站的具体要求，以确保顺利购票。", "sim_no_rag": 0.7810326218605042, "pass_no_rag": 1, "fact_no_rag": NaN, "top_score_no_rag": NaN, "top_q_no_rag": NaN, "error_no_rag": NaN, "answer_vector": "根据现有资料无法回答该问题。依据：参考1、参考2、参考3", "sim_vector": 0.0165286883711814, "pass_vector": 0, "fact_vector": NaN, "top_score_vector": 0.7437911629676819, "top_q_vector": "车票改签的途径有哪些？", "error_vector": NaN, "answer_hybrid": "根据现有资料无法回答该问题。依据：参考1、参考2、参考3", "sim_hybrid": 0.0165286883711814, "pass_hybrid": 0, "fact_hybrid": NaN, "top_score_hybrid": 0.032266, "top_q_hybrid": "办理退票的途径有哪些？", "error_hybrid": NaN, "improvement_vector": -0.7645039334893227, "improvement_hybrid": -0.7645039334893227}, {"question": "同一天同一趟车，一个身份证能买两张票吗？", "ground_truth": "同一张有效身份证件在同一乘车日期、同一车次只能购买一张车票，高铁动卧列车除外。", "eval_group": "rule_detail", "source_category": "证件/实名制", "difficulty": "medium", "answer_no_rag": "根据中国铁路的相关规定，使用同一张身份证在同一天购买同一趟列车的两张票是不允许的。为了避免重复购票的情况，建议您使用不同的有效身份证件信息进行购票。如果有特殊情况需要帮助，可以联系火车站或通过12306客服寻求解决方案。", "sim_no_rag": 0.7878810167312622, "pass_no_rag": 1, "fact_no_rag": 1.0, "top_score_no_rag": NaN, "top_q_no_rag": NaN, "error_no_rag": NaN, "answer_vector": "根据参考信息中的【参考1】可知，一张有效身份证件同一乘车日期同一车次只能购买一张车票，高铁动卧列车除外。因此，在一般情况下，同一天同一趟车一个身份证不能买两张票。\n\n依据：参考1", "sim_vector": 0.9243646264076232, "pass_vector": 1, "fact_vector": 1.0, "top_score_vector": 0.7722017765045166, "top_q_vector": "一张有效身份证件同一乘车日期同一车次是否可以购买多张车票？", "error_vector": NaN, "answer_hybrid": "不能，一张有效身份证件同一乘车日期同一车次只能购买一张车票，高铁动卧列车除外。依据：参考1、参考2", "sim_hybrid": 0.9392796754837036, "pass_hybrid": 1, "fact_hybrid": 1.0, "top_score_hybrid": 0.03306, "top_q_hybrid": "一张有效身份证件同一乘车日期同一车次是否可以购买多张车票？", "error_hybrid": NaN, "improvement_vector": 0.136483609676361, "improvement_hybrid": 0.1513986587524414}, {"question": "窗口退实名制车票，别人代办需要带什么？", "ground_truth": "在车站售票窗口办理退票时，本人办理需出具购票时使用的有效身份证件；代办时需出具代办人的有效身份证件和乘车人购票时使用的有效身份证件。", "eval_group": "rule_detail", "source_category": "证件/实名制", "difficulty": "medium", "answer_no_rag": "如果您通过车站窗口办理实名制车票的退票手续，并且是由他人代为办理的话，通常需要携带以下信息或证件：\n\n1. **购票时使用的有效身份证件原件**：因为实名制要求购票时必须提供乘车人的身份信息。\n2. **代办人本人的有效身份证件原件**：证明代办人的身份。\n\n请注意，具体的要求可能会根据铁路部门的规定有所变化。建议在前往车站之前，先通过官方网站、12306客服或其他官方渠道确认最新的退票政策和所需材料，以确保顺利办理相关手续。", "sim_no_rag": 0.8916362524032593, "pass_no_rag": 1, "fact_no_rag": 1.0, "top_score_no_rag": NaN, "top_q_no_rag": NaN, "error_no_rag": NaN, "answer_vector": "办理窗口退实名制车票时，如果由他人代办，需携带乘车人购票时使用的身份证件原件、代办人的有效身份证件原件以及报销凭证。依据：参考2", "sim_vector": 0.8786618113517761, "pass_vector": 1, "fact_vector": 1.0, "top_score_vector": 0.7027682065963745, "top_q_vector": "旅客在售票窗口购票时需要注意什么？", "error_vector": NaN, "answer_hybrid": "办理实名制车票退票时，如果由他人代办，需要携带代办人本人的有效身份证件原件、乘车人购票时使用的有效身份证件原件以及报销凭证。依据：参考1、参考2", "sim_hybrid": 0.8586535453796387, "pass_hybrid": 1, "fact_hybrid": 1.0, "top_score_hybrid": 0.032522, "top_q_hybrid": "办理先退票后领款后是否可以让别人帮助领取票款？", "error_hybrid": NaN, "improvement_vector": -0.0129744410514831, "improvement_hybrid": -0.0329827070236206}];
+const qlabels = details.map((d,i) => 'Q'+(i+1)+': '+d.question.substring(0,14));
+
+new Chart(document.getElementById('barSim').getContext('2d'), {
+    type: 'bar',
+    data: {
+        labels: qlabels,
+        datasets: methods.map((m, i) => ({
+            label: labels[m], data: details.map(d => d['sim_' + m]),
+            backgroundColor: bgPalette[i], borderColor: palette[i], borderWidth: 1.5,
+        }))
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true, max: 1, ticks: { callback: v => v.toFixed(2) } } }
+    }
+});
+
+new Chart(document.getElementById('barImp').getContext('2d'), {
+    type: 'bar',
+    data: {
+        labels: qlabels,
+        datasets: ['vector','hybrid'].map((m, i) => ({
+            label: labels[m], data: details.map(d => d['improvement_' + m]),
+            backgroundColor: bgPalette[i+1], borderColor: palette[i+1], borderWidth: 1.5,
+        }))
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { ticks: { callback: v => (v>=0?'+':'')+v.toFixed(2) } } }
+    }
+});
+
+let th = '';
+details.forEach((row, idx) => {
+    th += '<tr>';
+    th += `<td>${idx+1}</td>`;
+    th += `<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(row.question||'').replace(/\"/g,'&quot;')}">${(row.question||'').substring(0,28)}</td>`;
+    th += `<td>${row.eval_group||''}</td>`;
+    methods.forEach(m => th += `<td>${fmt(row['sim_' + m])}</td>`);
+    ['vector','hybrid'].forEach(m => {
+        const v = row['improvement_' + m];
+        const cls = v != null && v >= 0 ? 'pos' : 'neg';
+        th += `<td class="${cls}">${v != null ? (v>=0?'+':'')+v.toFixed(4) : 'N/A'}</td>`;
+    });
+    th += '</tr>';
+});
+document.getElementById('tb').innerHTML = th;
+</script>
+</body>
+</html>

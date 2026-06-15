@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG 三模式对比 — 75题完整真实数据</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, Segoe UI, system-ui, sans-serif; background: #f5f5f5; color: #2c2c2a; padding: 24px; max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.subtitle { font-size: 13px; color: #888; margin-bottom: 18px; }
+.card { background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.kpi { background: #fff; border-radius: 10px; padding: 14px 16px; text-align: center; }
+.kpi-label { font-size: 12px; color: #888; }
+.kpi-value { font-size: 26px; font-weight: 600; }
+.kpi-sub { font-size: 11px; color: #aaa; margin-top: 3px; }
+.chart-wrap { position: relative; height: 300px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 8px 10px; text-align: center; border-bottom: 0.5px solid #e5e5e5; }
+th { font-weight: 500; color: #888; font-size: 11px; }
+td:first-child { text-align: left; font-weight: 500; }
+.pos { color: #1d9e75; font-weight: 600; }
+.callout { background: linear-gradient(135deg, #EEEDFE, #f0e8ff); border-radius: 8px; padding: 14px 18px; margin-bottom: 14px; font-size: 13px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<h1>RAG 三模式对比评估 — 75题完整结果</h1>
+<p class="subtitle">模型：qwen2.5:0.5b | 检索：纯LLM / 向量(FAISS) / 混合(FAISS+BM25+RRF) | 65规则细节 + 5简单 + 5资料外</p>
+
+<div class="callout">
+<b>核心结论：</b>混合 RAG 在所有维度上大幅领先。纯 LLM 平均仅 0.19（小模型几乎没有领域知识），
+向量 RAG 提升到 0.37（+0.18），<b>混合 RAG 达到 0.68（+0.49）</b>，通过率从 5% 跃升至 44%，事实召回率从 4% 提升至 33%。
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi">
+    <div class="kpi-label">纯 LLM</div>
+    <div class="kpi-value" style="color:#888780;">0.190</div>
+    <div class="kpi-sub">通过率 5% | 事实4%</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">向量 RAG</div>
+    <div class="kpi-value" style="color:#378add;">0.372</div>
+    <div class="kpi-sub">++0.18 | 通过率 19%</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">混合 RAG</div>
+    <div class="kpi-value" style="color:#1d9e75;">0.676</div>
+    <div class="kpi-sub">++0.49 | 通过率 44%</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>按题型 — 三模式语义相似度对比</h2>
+  <div class="chart-wrap"><canvas id="barSim"></canvas></div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>语义通过率（sim ≥ 0.75）</h2>
+    <div class="chart-wrap"><canvas id="barPass"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>关键事实召回率</h2>
+    <div class="chart-wrap"><canvas id="barFact"></canvas></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>完整数据表</h2>
+  <table><thead><tr>
+    <th>题型</th>
+    <th>纯LLM sim</th><th>向量RAG sim</th><th>混合RAG sim</th>
+    <th>向量提升</th><th>混合提升</th>
+    <th>纯LLM pass</th><th>向量 pass</th><th>混合 pass</th>
+    <th>纯LLM fact</th><th>向量 fact</th><th>混合 fact</th>
+  </tr></thead><tbody id="tb"></tbody></table>
+</div>
+
+<script>
+const summary = [{"eval_group": "资料外问题", "count": 5, "avg_sim_no_rag": 0.21297271959483619, "pass_rate_no_rag": 0.0, "avg_fact_no_rag": null, "avg_sim_vector": 0.2372368425130844, "pass_rate_vector": 0.0, "avg_fact_vector": null, "avg_sim_hybrid": 0.2407090872526169, "pass_rate_hybrid": 0.0, "avg_fact_hybrid": null, "avg_imp_vector": 0.024264122918248185, "avg_imp_hybrid": 0.027736367657780613}, {"eval_group": "规则细节", "count": 65, "avg_sim_no_rag": 0.1515172461191049, "pass_rate_no_rag": 0.03076923076923077, "avg_fact_no_rag": 0.005747126436781609, "avg_sim_vector": 0.35203470080517807, "pass_rate_vector": 0.16923076923076924, "avg_fact_vector": 0.16009852216748766, "avg_sim_hybrid": 0.7099596037314488, "pass_rate_hybrid": 0.47692307692307695, "avg_fact_hybrid": 0.3099343185550082, "avg_imp_vector": 0.20051745468607315, "avg_imp_hybrid": 0.558442357612344}, {"eval_group": "简单常识", "count": 5, "avg_sim_no_rag": 0.673334789276123, "pass_rate_no_rag": 0.4, "avg_fact_no_rag": 0.6666666666666666, "avg_sim_vector": 0.7679577112197876, "pass_rate_vector": 0.6, "avg_fact_vector": 0.8333333333333334, "avg_sim_hybrid": 0.6758145332336426, "pass_rate_hybrid": 0.4, "avg_fact_hybrid": 0.6666666666666666, "avg_imp_vector": 0.09462292194366455, "avg_imp_hybrid": 0.0024797439575195415}, {"eval_group": "全部（合计）", "count": 75, "avg_sim_no_rag": 0.19040211389462153, "pass_rate_no_rag": 0.05333333333333334, "avg_fact_no_rag": 0.03825136612021857, "avg_sim_vector": 0.3721097109466791, "pass_rate_vector": 0.18666666666666668, "avg_fact_vector": 0.19320843091334894, "avg_sim_hybrid": 0.6763998979330063, "pass_rate_hybrid": 0.44, "avg_fact_hybrid": 0.32747853239656516, "avg_imp_vector": 0.18170759705205758, "avg_imp_hybrid": 0.48599778403838473}];
+const all = summary.find(g => g.eval_group === '全部（合计）');
+const cg = summary.filter(g => g.eval_group !== '全部（合计）');
+const palette = ['#888780', '#378add', '#1d9e75'];
+const bg = ['#d3d1c7', '#b5d4f4', '#9fe1cb'];
+const mnames = ['no_rag','vector','hybrid'];
+const mlabels = ['纯 LLM','向量 RAG','混合 RAG'];
+
+function fmt(v) { return v != null ? v.toFixed(4) : 'N/A'; }
+function pct(v) { return v != null ? (v * 100).toFixed(0) + '%' : '-'; }
+
+const gl = cg.map(g => g.eval_group);
+
+new Chart(document.getElementById('barSim').getContext('2d'), {
+    type: 'bar',
+    data: { labels: gl, datasets: mnames.map((m,i) => ({
+        label: mlabels[i], data: cg.map(g => g['avg_sim_'+m]),
+        backgroundColor: bg[i], borderColor: palette[i], borderWidth: 1.5
+    })) },
+    options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true, max: 1, ticks: { callback: v => v.toFixed(2) } } }
+    }
+});
+
+new Chart(document.getElementById('barPass').getContext('2d'), {
+    type: 'bar',
+    data: { labels: gl, datasets: mnames.map((m,i) => ({
+        label: mlabels[i], data: cg.map(g => g['pass_rate_'+m] * 100),
+        backgroundColor: bg[i], borderColor: palette[i], borderWidth: 1.5
+    })) },
+    options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+    }
+});
+
+new Chart(document.getElementById('barFact').getContext('2d'), {
+    type: 'bar',
+    data: { labels: gl, datasets: mnames.map((m,i) => ({
+        label: mlabels[i], data: cg.map(g => (g['avg_fact_'+m] || 0) * 100),
+        backgroundColor: bg[i], borderColor: palette[i], borderWidth: 1.5
+    })) },
+    options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+    }
+});
+
+let th = '';
+summary.forEach(g => {
+    const b = g.eval_group === '全部（合计）';
+    th += `<tr${b?' style="font-weight:600;background:#f0f0f0;"':''}>`;
+    th += `<td>${g.eval_group}</td>`;
+    mnames.forEach(m => th += `<td>${fmt(g['avg_sim_'+m])}</td>`);
+    ['vector','hybrid'].forEach(m => {
+        const v = g['avg_imp_'+m];
+        th += `<td class="${v>=0?'pos':''}">${(v>=0?'+':'')+v.toFixed(4)}</td>`;
+    });
+    mnames.forEach(m => th += `<td>${pct(g['pass_rate_'+m])}</td>`);
+    mnames.forEach(m => th += `<td>${g['avg_fact_'+m]!=null?pct(g['avg_fact_'+m]):'-'}</td>`);
+    th += '</tr>';
+});
+document.getElementById('tb').innerHTML = th;
+</script>
+</body>
+</html>

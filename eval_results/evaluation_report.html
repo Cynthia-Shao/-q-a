@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG 多模式对比评估报告</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, Segoe UI, system-ui, sans-serif; background: #f5f5f5; color: #2c2c2a; padding: 24px; }
+h1 { font-size: 22px; font-weight: 500; margin-bottom: 8px; }
+h2 { font-size: 16px; font-weight: 500; margin: 28px 0 12px; }
+.subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+.card { background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.metric { background: #f7f8fa; border-radius: 8px; padding: 14px 16px; }
+.metric-label { font-size: 12px; color: #888; }
+.metric-value { font-size: 24px; font-weight: 500; margin-top: 4px; }
+.metric-value.good { color: #1d9e75; }
+.metric-value.better { color: #378add; }
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 700px) { .chart-row { grid-template-columns: 1fr; } }
+.chart-wrap { position: relative; height: 310px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 0.5px solid #e5e5e5; }
+th { font-weight: 500; color: #888; font-size: 12px; }
+tr.best { background: #e1f5ee; }
+</style>
+</head>
+<body>
+<h1>RAG 多模式对比评估报告</h1>
+<p class="subtitle">测试集：75 题（规则细节 / 简单常识 / 资料外） &nbsp;|&nbsp; 模型：qwen2.5:latest</p>
+
+<div class="summary-grid" id="metricsGrid"></div>
+
+<div class="card">
+  <h2>按题型分组 — 平均语义相似度</h2>
+  <div class="chart-wrap"><canvas id="barSim" role="img" aria-label="分组相似度对比"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>按题型分组 — 关键事实命中率</h2>
+  <div class="chart-wrap"><canvas id="barFact" role="img" aria-label="分组事实命中率对比"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>各方法相对于纯LLM的语义相似度提升</h2>
+  <div class="chart-wrap"><canvas id="barImp" role="img" aria-label="相似度提升对比"></canvas></div>
+</div>
+
+<div class="card">
+  <h2>评估结果明细</h2>
+  <div style="overflow-x:auto;" id="detailTable"></div>
+</div>
+
+<script>
+const methods = ["no_rag", "vector", "hybrid", "hybrid_rewrite"];
+const labels = {"no_rag": "纯 LLM（无 RAG）", "vector": "向量检索 RAG", "hybrid": "混合检索 RAG", "hybrid_rewrite": "改写+混合检索 RAG"};
+const summary = [{"eval_group": "rule_detail", "count": 1, "avg_sim_no_rag": 0.6242921352386475, "pass_rate_no_rag": 0.0, "avg_fact_no_rag": 1.0, "avg_sim_vector": 0.4709774851799011, "pass_rate_vector": 0.0, "avg_fact_vector": 0.0, "avg_sim_hybrid": 0.7195188999176025, "pass_rate_hybrid": 0.0, "avg_fact_hybrid": 0.0, "avg_sim_hybrid_rewrite": 0.1510598361492157, "pass_rate_hybrid_rewrite": 0.0, "avg_fact_hybrid_rewrite": 0.0, "avg_imp_vector": -0.15331465005874634, "avg_imp_hybrid": 0.09522676467895508, "avg_imp_hybrid_rewrite": -0.47323229908943176}, {"eval_group": "simple", "count": 1, "avg_sim_no_rag": 0.8004786968231201, "pass_rate_no_rag": 1.0, "avg_fact_no_rag": 1.0, "avg_sim_vector": 0.6977863907814026, "pass_rate_vector": 0.0, "avg_fact_vector": 0.0, "avg_sim_hybrid": 0.6792076230049133, "pass_rate_hybrid": 0.0, "avg_fact_hybrid": 0.0, "avg_sim_hybrid_rewrite": 0.7006837725639343, "pass_rate_hybrid_rewrite": 0.0, "avg_fact_hybrid_rewrite": 1.0, "avg_imp_vector": -0.10269230604171753, "avg_imp_hybrid": -0.12127107381820679, "avg_imp_hybrid_rewrite": -0.09979492425918579}, {"eval_group": "all", "count": 2, "avg_sim_no_rag": 0.7123854160308838, "pass_rate_no_rag": 0.5, "avg_fact_no_rag": 1.0, "avg_sim_vector": 0.5843819379806519, "pass_rate_vector": 0.0, "avg_fact_vector": 0.0, "avg_sim_hybrid": 0.6993632614612579, "pass_rate_hybrid": 0.0, "avg_fact_hybrid": 0.0, "avg_sim_hybrid_rewrite": 0.425871804356575, "pass_rate_hybrid_rewrite": 0.0, "avg_fact_hybrid_rewrite": 0.5, "avg_imp_vector": -0.12800347805023193, "avg_imp_hybrid": -0.013022154569625854, "avg_imp_hybrid_rewrite": -0.2865136116743088}];
+
+const allRow = summary.find(r => r.eval_group === 'all');
+const groups = summary.filter(r => r.eval_group !== 'all');
+
+const palette = ['#888780', '#378add', '#1d9e75', '#993556'];
+const bgPalette = ['#d3d1c7', '#b5d4f4', '#9fe1cb', '#f4c0d1'];
+
+function fmt(v) { return v != null ? v.toFixed(4) : 'N/A'; }
+function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : 'N/A'; }
+
+let gridHtml = '';
+methods.forEach((m, i) => {
+    const sim = allRow ? allRow['avg_sim_' + m] : null;
+    const pr = allRow ? allRow['pass_rate_' + m] : null;
+    const fv = allRow ? allRow['avg_fact_' + m] : null;
+    gridHtml += `<div class="metric">
+      <div class="metric-label">${labels[m]}</div>
+      <div class="metric-value ${i > 0 ? 'better' : ''}">${fmt(sim)}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">通过率 ${pct(pr)} &nbsp;|&nbsp; 事实命中 ${fmt(fv)}</div>
+    </div>`;
+});
+document.getElementById('metricsGrid').innerHTML = gridHtml;
+
+function makeChart(id, labelKey, yLabel, isPct) {
+    const ctx = document.getElementById(id).getContext('2d');
+    const datasets = methods.map((m, i) => ({
+        label: labels[m],
+        data: groups.map(g => g[labelKey + m]),
+        backgroundColor: bgPalette[i],
+        borderColor: palette[i],
+        borderWidth: 1.5,
+    }));
+    new Chart(ctx, {
+        type: 'bar',
+        data: { labels: groups.map(g => g.eval_group), datasets: datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                y: {
+                    beginAtZero: true, max: isPct ? 1 : undefined,
+                    ticks: { callback: v => isPct ? (v*100).toFixed(0) + '%' : v.toFixed(3) }
+                }
+            }
+        }
+    });
+}
+
+makeChart('barSim', 'avg_sim_', '语义相似度', false);
+makeChart('barFact', 'avg_fact_', '关键事实命中率', true);
+
+const impCtx = document.getElementById('barImp').getContext('2d');
+const impMethods = ['vector', 'hybrid', 'hybrid_rewrite'];
+const impDatasets = impMethods.map((m, i) => ({
+    label: labels[m],
+    data: groups.map(g => g['avg_imp_' + m]),
+    backgroundColor: bgPalette[i+1],
+    borderColor: palette[i+1],
+    borderWidth: 1.5,
+}));
+new Chart(impCtx, {
+    type: 'bar',
+    data: { labels: groups.map(g => g.eval_group), datasets: impDatasets },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { ticks: { callback: v => v.toFixed(3) } } }
+    }
+});
+
+let tableHtml = '<table><thead><tr>';
+const headers = ['问题', '分组', '纯LLM', '向量RAG', '混合RAG', '改写+混合', '向量提升', '混合提升', '改写提升'];
+headers.forEach(h => tableHtml += `<th>${h}</th>`);
+tableHtml += '</tr></thead><tbody>';
+
+const details = [{"question": "车票实名制到底包含买票还是进站核验？", "ground_truth": "车票实名制管理包括实名购买和实名查验。实名购买是购票人凭乘车人有效身份证件买票，铁路企业记录身份和购票信息；实名查验是核对车票记载的身份信息、乘车人和有效身份证件是否一致，并记录乘车信息。", "eval_group": "simple", "source_category": "证件/实名制", "difficulty": "easy", "test_type": "paraphrase", "should_use_rag": true, "answer_no_rag": "车票实名制包括买票和进站核验两个环节。在购买火车票时，就需要提供旅客的真实身份信息，并与购票时使用的有效身份证件保持一致。而在进站乘车时，需要进行实名制验证，通过身份证件原件或其他可接受的有效证件来确认身份，确保人证合一。这一措施有助于维护铁路运输秩序，保障乘客安全。", "sim_no_rag": 0.8004786968231201, "pass_no_rag": 1, "fact_no_rag": 1.0, "top_score_no_rag": null, "top_q_no_rag": "", "error_no_rag": "", "answer_vector": "车票实名制管理包括购票和进站核验两个环节。依据：参考2", "sim_vector": 0.6977863907814026, "pass_vector": 0, "fact_vector": 0.0, "top_score_vector": 0.712437629699707, "top_q_vector": "车票改签的途径有哪些？", "error_vector": "", "answer_hybrid": "车票实名制管理包括购票和进站核验两个环节。依据：参考1、参考4", "sim_hybrid": 0.6792076230049133, "pass_hybrid": 0, "fact_hybrid": 0.0, "top_score_hybrid": 0.03306, "top_q_hybrid": "什么是车票实名制管理？", "error_hybrid": "", "answer_hybrid_rewrite": "铁路旅客运输实名制在购票环节主要涉及身份信息核验，确保票、证、人一致。具体来说，需要使用有效身份证件进行注册用户和乘车人的身份信息核验（依据：参考4）。进站核验环节则要求持有效凭证进站乘车，并在列车上进行车票及证件的查验，确保票、证、人一致（依据：参考2）。\n\n依据：参考1、参考2、参考4", "sim_hybrid_rewrite": 0.7006837725639343, "pass_hybrid_rewrite": 0, "fact_hybrid_rewrite": 1.0, "top_score_hybrid_rewrite": 0.030886, "top_q_hybrid_rewrite": "铁路部门为什么要实施互联网购票身份信息核验？", "error_hybrid_rewrite": "", "improvement_vector": -0.10269230604171753, "improvement_hybrid": -0.12127107381820679, "improvement_hybrid_rewrite": -0.09979492425918579}, {"question": "我忘带身份证了，能不能在12306上办临时乘车证明？", "ground_truth": "旅客因有效身份证件未携带、丢失等原因无法出示证件时，可到车站铁路公安制证口办理临时乘车身份证明；中国居民身份证类型旅客也可在铁路12306 APP上申请电子临时乘车身份证明。该证明仅供旅客购票、退票、改签、实名制核验、检票以及乘车使用。", "eval_group": "rule_detail", "source_category": "证件/实名制", "difficulty": "medium", "test_type": "detail", "should_use_rag": true, "answer_no_rag": "您可以尝试通过12306官方网站或手机应用程序办理临时身份证明。具体步骤如下：\n\n1. 打开12306官方网站或者“铁路12306”官方App。\n2. 登录您的账号，如果没有注册，请先完成注册流程。\n3. 在首页找到并点击“温馨服务”，然后选择“乘坐旅客列车临时身份证明”选项。\n4. 按照提示填写相关信息，并上传身份证照片或面部识别信息。审核通过后，系统会生成一个电子版的临时乘车证明。\n\n请注意，办理成功后，该证明仅在有效期内使用，请务必妥善保管并随身携带。如果遇到任何问题，可以联系12306客服寻求帮助。\n\n建议您尽快操作以确保顺利出行。", "sim_no_rag": 0.6242921352386475, "pass_no_rag": 0, "fact_no_rag": 1.0, "top_score_no_rag": null, "top_q_no_rag": "", "error_no_rag": "", "answer_vector": "根据现有资料无法回答该问题。参考信息中未提及关于办理临时乘车证明的具体情况。", "sim_vector": 0.4709774851799011, "pass_vector": 0, "fact_vector": 0.0, "top_score_vector": 0.674141526222229, "top_q_vector": "我可以在12306.cn网站帮朋友买票吗？", "error_vector": "", "answer_hybrid": "可以，在铁路12306 APP上申请电子临时乘车身份证明。依据：参考3", "sim_hybrid": 0.7195188999176025, "pass_hybrid": 0, "fact_hybrid": 0.0, "top_score_hybrid": 0.031025, "top_q_hybrid": "办理先退票后领款后身份证件丢失怎么办？", "error_hybrid": "", "answer_hybrid_rewrite": "根据现有资料无法回答该问题。依据：参考1、参考2、参考3、参考4、参考5", "sim_hybrid_rewrite": 0.1510598361492157, "pass_hybrid_rewrite": 0, "fact_hybrid_rewrite": 0.0, "top_score_hybrid_rewrite": 0.031099, "top_q_hybrid_rewrite": "在12306.cn网站注册时，可以使用哪些有效身份证件？", "error_hybrid_rewrite": "", "improvement_vector": -0.15331465005874634, "improvement_hybrid": 0.09522676467895508, "improvement_hybrid_rewrite": -0.47323229908943176}];
+details.forEach(row => {
+    tableHtml += '<tr>';
+    tableHtml += `<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(row.question||'').replace(/"/g,'&quot;')}">${(row.question||'').substring(0,35)}</td>`;
+    tableHtml += `<td>${row.eval_group||''}</td>`;
+    methods.forEach(m => {
+        const v = row['sim_' + m];
+        tableHtml += `<td>${v != null ? v.toFixed(4) : 'N/A'}</td>`;
+    });
+    ['vector','hybrid','hybrid_rewrite'].forEach(m => {
+        const v = row['improvement_' + m];
+        const cls = v != null && v > 0 ? ' style="color:#1d9e75"' : (v != null && v < 0 ? ' style="color:#e24b4a"' : '');
+        tableHtml += `<td${cls}>${v != null ? v.toFixed(4) : 'N/A'}</td>`;
+    });
+    tableHtml += '</tr>';
+});
+tableHtml += '</tbody></table>';
+document.getElementById('detailTable').innerHTML = tableHtml;
+</script>
+</body>
+</html>
